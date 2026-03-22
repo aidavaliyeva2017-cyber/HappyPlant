@@ -1,0 +1,8 @@
+# HappyPlant 3.0 Enterprise — requirements.txt
+# Installation: pip install -r requirements.txt
+
+aiohttp>=3.9.0          # Async HTTP: Supabase, Plant.id, Open-Meteo
+pyyaml>=6.0.1           # YAML Konfiguration
+
+# Optional für echte MQTT-Integration:
+# asyncio-mqtt>=0.16.1  # MQTT Broker Anbindung (ESP32-Nodes)
