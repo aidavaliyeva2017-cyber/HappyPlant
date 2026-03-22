@@ -1,0 +1,341 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "url": "<__PLACEHOLDER_VALUE__Plant sensor API URL (e.g., http://192.168.1.100/api/sensor)__>",
+        "options": {}
+      },
+      "id": "e6a8c7de-a78a-4b59-9395-df95da198574",
+      "name": "Fetch Plant Sensor Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        208
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "80b4af38-fc58-4240-aef2-8ac02b0b5c20",
+      "name": "Combine Sensor & Weather",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        688,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "water",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Water Plant"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "pause",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pause Watering"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "no_action",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "No Action"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e003ccbd-e8f6-4577-b755-8f81f4d2d28b",
+      "name": "Route by Decision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1136,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "<__PLACEHOLDER_VALUE__Watering system API URL (e.g., http://192.168.1.100/api/water/start)__>",
+        "options": {}
+      },
+      "id": "b138b99d-c87b-4dd9-85fd-5770122fc5b1",
+      "name": "Trigger Watering API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1408,
+        96
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1424,
+        496
+      ],
+      "id": "f98a2b2a-843f-4719-ba6e-f785262a0166",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        304
+      ],
+      "id": "a3639f41-564b-4036-b105-959c96369c19",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "sendTo": "michazauner1102@gmail.com",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1360,
+        304
+      ],
+      "id": "f1c9949a-9d6c-4613-8fd2-7379f50ba964",
+      "name": "Send a message",
+      "webhookId": "af9734b7-cded-4430-bb39-5ec1c7dc8f24",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "7zoAQnYdtt244Iav",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "michazauner1102@gmail.com",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1616,
+        96
+      ],
+      "id": "3ccc15c6-890e-491d-a8a2-39d32dfd5a4a",
+      "name": "Send a message1",
+      "webhookId": "831417be-2a89-4958-98e3-5f6bb7ba7247",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "7zoAQnYdtt244Iav",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get sensor data\nconst sensorData = $input.item.json;\nconst soilMoisture = sensorData.soilMoisture || 0;\nconst temperature = sensorData.temperature || 0;\nconst humidity = sensorData.humidity || 0;\n\n// Get weather forecast data\nconst weatherData = sensorData.hourly || {};\nconst precipitation = weatherData.precipitation || [];\n\n// Calculate expected rain in next 6 hours\nconst expectedRain = precipitation.reduce((sum, val) => sum + (val || 0), 0);\n\n// Decision thresholds\nconst DRY_SOIL_THRESHOLD = 40; // Below 40% is dry\nconst RAIN_THRESHOLD = 2; // More than 2mm expected rain\n\n// Decision logic\nlet decision = 'no_action';\nlet reason = '';\n\nif (soilMoisture < DRY_SOIL_THRESHOLD && expectedRain < RAIN_THRESHOLD) {\n  decision = 'water';\n  reason = 'Soil is dry (' + soilMoisture + '%) and no significant rain expected (' + expectedRain.toFixed(1) + 'mm)';\n} else if (expectedRain >= RAIN_THRESHOLD) {\n  decision = 'pause';\n  reason = 'Rain expected in next 6 hours (' + expectedRain.toFixed(1) + 'mm), watering paused';\n} else {\n  decision = 'no_action';\n  reason = 'Plant is healthy. Soil moisture: ' + soilMoisture + '%, Expected rain: ' + expectedRain.toFixed(1) + 'mm';\n}\n\nreturn [{\n  json: {\n    decision: decision,\n    reason: reason,\n    soilMoisture: soilMoisture,\n    temperature: temperature,\n    humidity: humidity,\n    expectedRain: expectedRain.toFixed(1)\n  }\n}];"
+      },
+      "id": "a43cf30a-195c-4705-a2cd-64b936bd9b4d",
+      "name": "Watering Decision Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "cityName": "Heilbronn, de",
+        "language": "de"
+      },
+      "type": "n8n-nodes-base.openWeatherMap",
+      "typeVersion": 1,
+      "position": [
+        464,
+        416
+      ],
+      "id": "8770497f-7905-44c1-9e57-6f3b376733b6",
+      "name": "OpenWeatherMap",
+      "credentials": {
+        "openWeatherMapApi": {
+          "id": "88UCo2P9lNGoeWYZ",
+          "name": "OpenWeatherMap account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Fetch Plant Sensor Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Sensor & Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Sensor & Weather": {
+      "main": [
+        [
+          {
+            "node": "Watering Decision Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Decision": {
+      "main": [
+        [
+          {
+            "node": "Trigger Watering API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Watering API": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "OpenWeatherMap",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Plant Sensor Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Watering Decision Logic": {
+      "main": [
+        [
+          {
+            "node": "Route by Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenWeatherMap": {
+      "main": [
+        [
+          {
+            "node": "Combine Sensor & Weather",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ba70f8b6c7ba9fadc59606997733331b77d3677f2ca65252e4c470915a646662"
+  }
+}
