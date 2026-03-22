@@ -1,0 +1,998 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Du bist der happyPlant AI Agent — ein intelligenter Assistent für ein smartes Pflanzenbewässerungssystem in Großstädten. Du beantwortest Nutzerfragen basierend auf Echtzeit-Sensordaten, Wetterdaten und Bewässerungs-Historien. Du bist rein lesend — du startest keine Bewässerung, schreibst keine Daten und triggerst keine externen Systeme.\n\n## Deine Datenbank (Supabase Postgres)\n\nDu hast Zugriff auf folgende Tabellen und Views. Nutze ausschließlich SELECT Queries.\n\n### Tabellen\n- \"zones\" — Stammdaten der Pflanzenzonen (Standort, Name, Konfiguration)\n- \"sensor_readings\" — Zeitreihe der Sensordaten pro Zone (Bodenfeuchtigkeit, Luftfeuchtigkeit, Zeitstempel)\n- \"zone_snapshots\" — Momentaufnahmen des Zonenstatus zu bestimmten Zeitpunkten\n- \"watering_events\" — Protokoll aller Bewässerungsereignisse (zone_id, node_id, Wassermenge, Zeitpunkt)\n- \"water_impact\" — Berechnete Wasser-Einsparungen und Verbrauchsdaten\n\n### Views (fertig aggregierte Daten — bevorzugt nutzen)\n- \"v_daily_watering\" — Tägliche Bewässerungsübersicht pro Zone\n- \"v_weekly_impact\" — Wöchentlicher Wasser- und Klimaimpact\n- \"v_zone_health\" — Aktueller Gesundheitsstatus pro Zone\n\nNutze die Views wann immer möglich — sie liefern bereits aufbereitete Daten und sind schneller als eigene JOINs über die Rohtabellen.\n\n## Weitere Tools\n\n### HTTP Request Tool (Wetter-API)\nGET Request an Open-Meteo: https://api.open-meteo.com/v1/forecast?latitude=49.14&longitude=9.22&hourly=temperature_2m,precipitation_probability,precipitation&forecast_days=1&timezone=Europe/Berlin\nNur GET Requests. Extrahiere die Werte für die nächsten 6 Stunden ab jetzt.\n\n### Code Tool\nFür Berechnungen: Health-Score, Trends, Durchschnitte, CO2-Schätzungen. Keine API Calls im Code Tool.\n\n### Supabase Vector Store\nPflanzenwissensbasis mit sortenspezifischen Infos: optimale Bedingungen, Wasserbedarf, Pflegetipps, Krankheitsbilder.\n\n### Think Tool\nNutze dieses Tool BEVOR du antwortest um deine Überlegungen zu strukturieren.\n\n## Aktionen\n\nDu verstehst natürliche Sprache auf Deutsch. Nutzer können dich fragen:\n- \"Wann muss ich als nächstes gießen?\" oder \"Nächste Bewässerung\" → Führe NEXT_WATERING aus\n- \"Wie geht es meiner Pflanze?\" oder \"Pflanzengesundheit\" oder \"Health-Score\" → Führe PLANT_HEALTH aus\n- \"Wie viel Wasser spare ich?\" oder \"Klimabeitrag\" oder \"Impact\" → Führe WATER_IMPACT aus\n- \"Welche Zonen gibt es?\" oder \"Zeig mir alle Zonen\" → Frage die \"zones\" Tabelle ab und liste alle verfügbaren Zonen mit ID, Name und Standort auf\n\nDu erkennst die Absicht automatisch — Nutzer müssen NICHT die englischen Begriffe verwenden.\n\n## Zonen-Matching-Logik\n\n**WICHTIG:** Wenn der Nutzer einen Standort oder Zonennamen nennt (z.B. \"Heilbronn\", \"Berlin\", \"Stadtpark\"):\n\n1. Frage IMMER zuerst die \"zones\" Tabelle ab und suche nach passenden Zonen (Name, Standort, zone_id)\n2. Wenn GENAU EINE Zone zu der Eingabe passt → Nutze diese Zone direkt und fahre mit der Aktion fort\n3. Wenn MEHRERE Zonen in derselben Stadt/zum selben Suchbegriff existieren → Frage den Nutzer, welche Zone gemeint ist (liste die Optionen auf)\n4. Wenn KEINE Zone passt → Sage dem Nutzer, dass keine Zone gefunden wurde und liste alle verfügbaren Zonen auf\n\nBeispiele:\n- Nutzer sagt \"Heilbronn\" und es gibt nur \"zone_park_nord (Stadtpark Heilbronn)\" → Nutze zone_park_nord direkt\n- Nutzer sagt \"Berlin\" und es gibt \"zone_blumenbeete (Blumenbeete Berlin Mitte)\" UND \"zone_tiergarten (Tiergarten Berlin)\" → Frage welche Zone gemeint ist\n- Nutzer sagt \"Hamburg\" und es gibt nur \"zone_gewaechshaus (Gewächshaus Hamburg)\" → Nutze zone_gewaechshaus direkt\n\nErfinde KEINE Daten. Nutze IMMER die Datenbank-Tools um Zonen zu finden.\n\n### NEXT_WATERING (Nächste Bewässerung)\n1. Postgres: Frage \"zones\" Tabelle ab und matche die Nutzereingabe (siehe Zonen-Matching-Logik)\n2. Postgres: Aktuelle Sensordaten aus sensor_readings für die zone_id abfragen\n3. Postgres: Letzte Bewässerung aus v_daily_watering oder watering_events abfragen\n4. HTTP Request: Regenvorhersage der nächsten 6 Stunden abrufen\n5. Supabase Vector Store: Wasserbedarf der Pflanzenart nachschlagen\n6. Think: Entscheidung abwägen — Feuchtigkeit zu niedrig und kein Regen = bewässern nötig, Regen erwartet = verschieben, Feuchtigkeit ok = Zeitpunkt schätzen wann Schwellenwert erreicht wird\n7. Antworte mit: Zeitpunkt, Wassermenge, ob Regen verschiebt, Begründung\n\n### PLANT_HEALTH (Pflanzengesundheit)\n1. Postgres: Frage \"zones\" Tabelle ab und matche die Nutzereingabe (siehe Zonen-Matching-Logik)\n2. Postgres: Aktuellen Zonenstatus aus v_zone_health abfragen\n3. Postgres: Sensor-Verlauf der letzten 7 Tage aus sensor_readings abfragen\n4. Postgres: Letzte zone_snapshots für Vergleich abfragen\n5. Supabase Vector Store: Sortenspezifische Optimalwerte und Pflegetipps nachschlagen\n6. Think: Score, Trend und Empfehlungen zusammenführen\n7. Antworte mit: Pflanzenart, Health-Score, Status, Trend, maximal 1 konkreter Pflegetipp\n\n### WATER_IMPACT (Wasser- und Klimabeitrag)\n1. Postgres: Wöchentlichen Impact aus v_weekly_impact abfragen\n2. Postgres: Gesamtdaten aus water_impact abfragen\n3. Postgres: Bewässerungshistorie aus watering_events abfragen\n4. Code: CO2-Absorption berechnen (ca. 5kg CO2/Jahr pro gesunde Pflanze, skaliert nach Health-Score)\n5. Think: Zahlen prüfen und verständlich formulieren\n6. Antworte mit: Wasserverbrauch, Einsparung, Klimabeitrag\n\n## Antwortformat\n\nAntworte IMMER in natürlicher Sprache als Klartext. Gib NIEMALS JSON, Code-Blöcke oder technische Strukturen aus.\n\nBeispiel einer guten Antwort:\n\"Die Bodenfeuchtigkeit im Stadtpark Heilbronn liegt bei 42%. Die nächste Bewässerung empfehle ich in ca. 3 Stunden mit 12 Litern.\"\n\nBeispiel einer schlechten Antwort:\n{\"needs_info\": false, \"question\": \"\", \"answer\": \"Die Bodenfeuchtigkeit...\"}\n\nWenn du zusätzliche Informationen vom Nutzer brauchst, stelle die Rückfrage direkt als normalen Satz:\n\"Meinst du den Stadtpark Heilbronn oder den Rosengarten Heilbronn?\"\n\n## Antwortregeln\n- Immer auf Deutsch, natürliche Sprache, KURZ und prägnant.\n- Maximal 2-3 Sätze pro Antwort.\n- Nenne nur die wichtigsten Zahlen mit Einheiten (Liter, Prozent, kg, Stunden).\n- Maximal 1 Handlungsempfehlung oder Tipp.\n- Bevorzuge die Views (v_daily_watering, v_weekly_impact, v_zone_health) gegenüber Roh-Queries.\n- Keine technischen Details wie SQL Queries, API URLs oder Tool-Namen in der Antwort.\n- Wenn Daten fehlen oder ein Tool einen Fehler liefert, sage das ehrlich.\n- Nutze das Chat Memory um den Kontext des Gesprächs zu behalten (z.B. wenn der Nutzer \"Zone 3\" erwähnt hat, merke dir das für Folgefragen)."
+        }
+      },
+      "id": "4f1406be-c21d-46df-8ee4-75ba077e6da2",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1568,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Berechnet einen Health-Score (0-100) basierend auf Sensordaten (Bodenfeuchtigkeit, Temperatur, Luftfeuchtigkeit) und Wetterdaten. Eingabe: JSON mit sensor_data und weather_data. Ausgabe: health_score als Zahl.",
+        "language": "python",
+        "pythonCode": "",
+        "specifyInputSchema": true,
+        "jsonSchemaExample": "{\"sensor_data\":{\"soil_moisture\":45,\"temperature\":22,\"humidity\":65},\"weather_data\":{\"rain_prob\":20,\"temp\":21}}"
+      },
+      "id": "c3df10ef-3def-4970-8281-46607db7d9fc",
+      "name": "Code Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        1056,
+        640
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "typeVersion": 1.1,
+      "position": [
+        1184,
+        640
+      ],
+      "id": "2fe7522f-88c6-4ee0-870c-c6883ecccfbe",
+      "name": "Think"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "50fff7c1-6ff4-4550-894e-ed3d9bd2857d",
+              "name": "Pflanzengesundheit",
+              "value": "Lies aktuelle Sensordaten und Sensorhistorie der letzten 7 Tage. Berechne Health-Score 0-100 (Feuchtigkeit 35-65%, Temperatur 15-30°C, Luftfeuchtigkeit 40-70% als Optimalwerte). Antworte mit Score, Status, Trend der letzten Tage und konkreten Pflegeempfehlungen. Standort Heilbronn",
+              "type": "string"
+            },
+            {
+              "id": "f3319394-9d2e-4e3a-922b-c4cbccf6b434",
+              "name": "",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        16,
+        272
+      ],
+      "id": "98e516bd-ee63-4c16-befb-638cb2ff31a1",
+      "name": "Pflanzengesundheit"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d055c953-ce46-47b2-a081-cc4ef7a9c1a8",
+              "name": "Nächste Bewesserung ",
+              "value": "Lies Bodenfeuchtigkeit aus der Datenbank und Regenvorhersage der nächsten 6 Stunden von Open-Meteo. Berechne wann die nächste Bewässerung voraussichtlich nötig wird. Schwellenwert: 35% Feuchtigkeit, 2mm Regen. Antworte mit Zeitpunkt, Wassermenge, ob Regen die Bewässerung verschiebt und warum. Standort Heilbronn",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        16,
+        64
+      ],
+      "id": "be037f34-cbe8-4197-b686-92dc4a0d61b1",
+      "name": "Nächste Bewässerung"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "locationSelection": "coordinates",
+        "latitude": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Latitude', ``, 'string') }}",
+        "longitude": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Longitude', ``, 'string') }}",
+        "language": "de"
+      },
+      "id": "28259141-2a60-4cfa-8e1d-9b049a0a06c8",
+      "name": "Weather Tool",
+      "type": "n8n-nodes-base.openWeatherMapTool",
+      "typeVersion": 1,
+      "position": [
+        1312,
+        640
+      ],
+      "credentials": {
+        "openWeatherMapApi": {
+          "id": "88UCo2P9lNGoeWYZ",
+          "name": "OpenWeatherMap account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "sensor_readings",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "020570c3-2f8f-47fe-a3f9-1d23f4386ffd",
+      "name": "sensor_readings",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "v_daily_watering",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "c13f3437-b1ac-4306-8af2-ec65262723ac",
+      "name": "v_daily_watering",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        1568,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "v_weekly_impact",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "f73e24cb-c584-414c-a83b-3e3df0f85a51",
+      "name": "v_weekly_impact",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        1696,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "v_zone_health",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "1cb125ac-33d7-41dc-9cbd-df9728f8b25c",
+      "name": "v_zone_health",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        1824,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "water_impact",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "41d286b5-2a6e-4e29-bbc5-5ddb28244cad",
+      "name": "water_impact",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        1952,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "zone_snapshots",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "c5b66c86-ce8c-4beb-93b7-388139902077",
+      "name": "zone_snapshots",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "zones",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "fb0cd8f8-51eb-4414-a691-c674021150c2",
+      "name": "zones",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        2208,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "watering_events",
+        "limit": 100,
+        "filterType": "none"
+      },
+      "id": "48e8822b-78ef-48cc-9bc2-c2d84d12b55a",
+      "name": "watering_events",
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        2336,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "qGo6hUWO1uJbUjJL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "120571b9-62b4-43be-b50b-88639a97495f",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -208,
+        64
+      ],
+      "id": "aeab7fad-b375-46dc-8ee0-bf327f2228f0",
+      "name": "Webhook",
+      "webhookId": "120571b9-62b4-43be-b50b-88639a97495f"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "45828e17-7024-4573-b76e-ae72e71c32a6",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -208,
+        256
+      ],
+      "id": "58a31d07-0826-4b0f-be09-36d120dd92d3",
+      "name": "Webhook1",
+      "webhookId": "45828e17-7024-4573-b76e-ae72e71c32a6"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "007031e5-67a4-4b38-921e-6ca2b449b8bb",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -208,
+        464
+      ],
+      "id": "4cf41760-61ff-4944-bb1c-fe2d6fd26132",
+      "name": "Webhook2",
+      "webhookId": "007031e5-67a4-4b38-921e-6ca2b449b8bb"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        768
+      ],
+      "id": "3e644b4b-5db6-408b-9e16-80ac32f6f870",
+      "name": "When chat message received",
+      "webhookId": "7650a124-9b1b-4e66-beff-24f93d48bddf"
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.chatInput }}",
+        "guardrails": {
+          "jailbreak": {
+            "value": {
+              "threshold": 0.7,
+              "customizePrompt": true
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.guardrails",
+      "typeVersion": 2,
+      "position": [
+        224,
+        768
+      ],
+      "id": "2b826f82-ca1b-452f-bd8b-d98491d84b9c",
+      "name": "Guardrails"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "message": "Hey! 🌱\n\nDas liegt leider außerhalb meines Bereichs – ich bin hier, um dir bei allem rund um Pflanzenpflege zu helfen.\n\nStell mir gerne eine Frage zu deinen Pflanzen und ich helfe dir weiter! 🌿",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.2,
+      "position": [
+        576,
+        864
+      ],
+      "id": "60f15e3f-1e66-4bb9-89a0-b56073d9c567",
+      "name": "Chat",
+      "webhookId": "248120bd-02e4-46c5-b3b6-c431f979fc96"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "happyplant-session",
+        "contextWindowLength": 10
+      },
+      "id": "fa59e727-a91e-4268-a46f-9407a9b605b8",
+      "name": "Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        928,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        800,
+        640
+      ],
+      "id": "48a7c25f-4f42-46ea-b5f1-ba6840972bbd",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "moRlVEiAaOkdp3ls",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        304,
+        992
+      ],
+      "id": "28f3b3a6-cd84-4578-a020-415976b90fd8",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "moRlVEiAaOkdp3ls",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2880,
+        416
+      ],
+      "id": "7638885d-ec5c-4d16-8ac3-bfe921e942f7",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cae1a5fa-d6d3-433f-960c-43783840a33b",
+              "name": "output",
+              "value": "={{ $json.output.antwort || $json.output.frage || $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "40a872a1-4767-47a2-acd6-5352d80501eb",
+      "name": "Extract Answer",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2560,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"braucht_info\":false,\"frage\":\"\",\"antwort\":\"\"}",
+        "autoFix": true
+      },
+      "id": "692a4e9a-cf70-475c-9cb3-43ce63862252",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2464,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2544,
+        848
+      ],
+      "id": "18a71a28-ec5a-4e38-93c3-afc34508730d",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "moRlVEiAaOkdp3ls",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1b2c3d4-e5f6-4a5b-8c9d-1e2f3a4b5c6d",
+              "name": "chatInput",
+              "value": "={{ $json[\"Nächste Bewesserung \"] }}",
+              "type": "string"
+            },
+            {
+              "id": "b2c3d4e5-f6a7-4b5c-9d1e-2f3a4b5c6d7e",
+              "name": "source",
+              "value": "webhook_bewaesserung",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3abf8355-454c-4c8b-b3cc-d965f7146cf4",
+      "name": "Normalize Bewässerung",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        288,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c3d4e5f6-a7b8-4c5d-9e1f-2a3b4c5d6e7f",
+              "name": "chatInput",
+              "value": "={{ $json.Pflanzengesundheit }}",
+              "type": "string"
+            },
+            {
+              "id": "d4e5f6a7-b8c9-4d5e-1f2a-3b4c5d6e7f8a",
+              "name": "source",
+              "value": "webhook_gesundheit",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e204ad50-a6cb-4229-903e-6287caabd87c",
+      "name": "Normalize Gesundheit",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        288,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e5f6a7b8-c9d1-4e5f-2a3b-4c5d6e7f8a9b",
+              "name": "chatInput",
+              "value": "={{ $json.Impact }}",
+              "type": "string"
+            },
+            {
+              "id": "f6a7b8c9-d1e2-4f5a-3b4c-5d6e7f8a9b1c",
+              "name": "source",
+              "value": "webhook_impact",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8f661565-01a3-4d15-8a8e-47924ef885f0",
+      "name": "Normalize Impact",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        288,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dc064df1-5689-4c57-ac5a-b3e62c9bb34f",
+              "name": "chatInput",
+              "value": "={{ $json.guardrailsInput }}",
+              "type": "string"
+            },
+            {
+              "id": "0b2b9e03-4639-4aeb-a432-693fa984d5da",
+              "name": "source",
+              "value": "chat",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "324aa5bb-ded1-4026-a726-361a83875105",
+      "name": "Normalize Chat",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        576,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "24bc608b-db2c-4d86-84f3-1ec5a5b8de88",
+              "name": "Impact",
+              "value": "ies Bewässerungs-Logs und Sensordaten der letzten 30 Tage aller Pflanzen des Nutzers. Berechne Wasserverbrauch, Einsparung durch smarte Bewässerung und CO2-Absorption (ca. 5kg CO2/Jahr pro gesunde Pflanze, skaliert nach Health-Score). Antworte mit einer Zusammenfassung des Klimabeitrags.Standort Heilbronn",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "271529ef-abbd-40ff-81a6-79597ed2a789",
+      "name": "klimatischer Impact",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        16,
+        464
+      ]
+    }
+  ],
+  "connections": {
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Extract Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Think": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pflanzengesundheit": {
+      "main": [
+        [
+          {
+            "node": "Normalize Gesundheit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nächste Bewässerung": {
+      "main": [
+        [
+          {
+            "node": "Normalize Bewässerung",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weather Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sensor_readings": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "v_daily_watering": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "v_weekly_impact": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "v_zone_health": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "water_impact": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "zone_snapshots": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "zones": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "watering_events": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        []
+      ]
+    },
+    "Webhook2": {
+      "main": [
+        []
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Guardrails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrails": {
+      "main": [
+        [
+          {
+            "node": "Normalize Chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Guardrails",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Answer": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Bewässerung": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Gesundheit": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Impact": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Chat": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "klimatischer Impact": {
+      "main": [
+        [
+          {
+            "node": "Normalize Impact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ba70f8b6c7ba9fadc59606997733331b77d3677f2ca65252e4c470915a646662"
+  }
+}
