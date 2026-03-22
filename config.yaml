@@ -1,0 +1,76 @@
+# config.yaml — HappyPlant 3.0 Enterprise Konfiguration
+# Diese Datei im gleichen Ordner wie main.py ablegen.
+# Ohne diese Datei startet das System mit Demo-Konfiguration.
+
+mqtt_broker: "localhost"          # IP/Hostname des MQTT-Brokers (z.B. Raspberry Pi)
+mqtt_port: 1883                   # Standard MQTT Port
+plant_api_key: "2b10Ib88KoI46Mc4T80p2nYYe" # API Key von plant.id
+supabase_url: "https://muakcpxgujorvadpjxwi.supabase.co"  # Supabase Projekt URL
+supabase_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11YWtjcHhndWpvcnZhZHBqeHdpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDA5OTk5MCwiZXhwIjoyMDg5Njc1OTkwfQ.lePRY8dcEzWQzQEyXr-yqhL2QJOOVYE7OBckLd9UxqQ"                        # Supabase anon/service key
+dashboard_interval_s: 10          # Dashboard-Update alle X Sekunden
+
+zones:
+  # ── Zone 1: Stadtpark ──────────────────────────────────────
+  - zone_id: "zone_park_nord"
+    name: "🌳 Stadtpark Nord"
+    latitude: 49.1450              # GPS-Koordinaten der Zone
+    longitude: 9.2109
+    use_weather: true
+    soil_dry_threshold: 0.35
+    water_duration_s: 15
+    check_interval_s: 60
+    identify_plant: true
+    nodes:
+      - node_id: "node_p1"
+        mqtt_topic: "happyplant/park_nord/node1"
+        has_camera: true
+        has_pump: true
+      - node_id: "node_p2"
+        mqtt_topic: "happyplant/park_nord/node2"
+        has_camera: true
+        has_pump: true
+      - node_id: "node_p3"
+        mqtt_topic: "happyplant/park_nord/node3"
+        has_camera: false         # kein Foto, nur Sensor
+        has_pump: true
+
+  # ── Zone 2: Blumenbeete ────────────────────────────────────
+  - zone_id: "zone_blumenbeete"
+    name: "🌸 Blumenbeete Marktplatz"
+    latitude: 49.1427
+    longitude: 9.2108
+    use_weather: true
+    soil_dry_threshold: 0.40
+    water_duration_s: 8
+    check_interval_s: 45
+    identify_plant: true
+    nodes:
+      - node_id: "node_b1"
+        mqtt_topic: "happyplant/blumenbeete/node1"
+        has_camera: true
+        has_pump: true
+      - node_id: "node_b2"
+        mqtt_topic: "happyplant/blumenbeete/node2"
+        has_camera: false
+        has_pump: true
+
+  # ── Zone 3: Gewächshaus ────────────────────────────────────
+  - zone_id: "zone_gewaechshaus"
+    name: "🏠 Gewächshaus Betrieb"
+    latitude: 49.1380
+    longitude: 9.2200
+    use_weather: false             # Gewächshaus = kein Außenwetter relevant
+    soil_dry_threshold: 0.25
+    water_duration_s: 20
+    check_interval_s: 30
+    identify_plant: false         # Pflanze manuell gesetzt
+    plant_override: "Tomato (Solanum lycopersicum)"
+    nodes:
+      - node_id: "node_g1"
+        mqtt_topic: "happyplant/gewaechshaus/node1"
+        has_camera: true
+        has_pump: true
+      - node_id: "node_g2"
+        mqtt_topic: "happyplant/gewaechshaus/node2"
+        has_camera: true
+        has_pump: true
