@@ -1,4 +1,4 @@
-##Happy Plant:
+## Happy Plant:
 
 *Smart irrigation that measures its own climate impact.*
 
